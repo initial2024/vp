@@ -104,7 +104,23 @@ function startSSH() {
     let authenticated = false;
     let ownChannels = 0;
     let anonymousFailures = 0;
-    client.on("error", () => {});
+    const connectedAt = Date.now();
+    client.on("error", (error) => {
+      const kind = /^[A-Z0-9_]+$/.test(String(error?.code)) ? error.code : "OTHER";
+      console.log("SSH_CONNECTION_ERROR code=" + kind);
+    });
+    client.on("close", () => {
+      console.log("SSH_CONNECTION_CLOSED alive_ms=" + (Date.now() - connectedAt));
+    });
+    client.on("request", (accept, reject, name) => {
+      if (name === "keepalive@openssh.com" || name === "ping@openssh.com") {
+        console.log("SSH_KEEPALIVE_RECEIVED");
+        if (typeof accept === "function") accept();
+      } else {
+        console.log("SSH_GLOBAL_REQUEST_REJECTED");
+        if (typeof reject === "function") reject();
+      }
+    });
     client.on("authentication", (ctx) => {
       const now = Date.now();
       const record = ip
