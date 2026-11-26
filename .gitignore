@@ -1,0 +1,6 @@
+node_modules/
+bridge.local.json
+.private/
+.vp-package-sha256
+*.download
+npm-debug.log*
