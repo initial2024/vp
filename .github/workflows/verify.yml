@@ -1,0 +1,35 @@
+name: Node bridge syntax and network smoke test
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Install dependencies
+        run: npm install --omit=optional --no-audit --no-fund
+      - name: Syntax and unit tests
+        run: |
+          node --check index.js
+          node --check bridge.js
+          npm test
+      - name: Health-mode HTTP smoke test
+        run: |
+          PORT=24761 node bridge.js > bridge-smoke.log 2>&1 &
+          pid=$!
+          trap 'kill "$pid" 2>/dev/null || true' EXIT
+          for i in 1 2 3 4 5 6 7 8 9 10; do
+            if curl --fail --silent http://127.0.0.1:24761/ | grep -q 'PulsarCloud network test OK'; then
+              echo 'HTTP_SMOKE_PASS'
+              exit 0
+            fi
+            sleep 1
+          done
+          cat bridge-smoke.log
+          exit 1
