@@ -218,6 +218,7 @@ function startSSH() {
         totalChannels++;
         let finished = false;
         let accepted = false;
+        const tunnelStartedAt = Date.now();
         function finish() {
           if (!finished) { finished = true; ownChannels--; totalChannels--; }
         }
@@ -255,7 +256,16 @@ function startSSH() {
             console.log("FORWARD_ERROR phase=connect code=TIMEOUT");
             remote.destroy();
           });
-          remote.on("close", finish);
+          remote.on("close", () => {
+            // Counts only; never print domains, target IPs, payloads, or secrets.
+            // bytesWritten = bytes delivered toward target, bytesRead = target replies.
+            if (accepted) {
+              console.log("FORWARD_BYTES sent=" + remote.bytesWritten +
+                " received=" + remote.bytesRead +
+                " elapsed_ms=" + (Date.now() - tunnelStartedAt));
+            }
+            finish();
+          });
         } catch (error) {
           console.log("FORWARD_REJECT reason=lookup-or-socket-exception");
           try { reject(); } catch (_) {}
