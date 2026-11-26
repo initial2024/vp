@@ -162,8 +162,16 @@ function startSSH() {
       client.on("tcpip", async (accept, reject, info) => {
         const targetPort = Number(info.destPort);
         const host = String(info.destIP || "");
-        if (![80, 443].includes(targetPort) || !validRemoteName(host) ||
-            ownChannels >= 8 || totalChannels >= 24) {
+        // Privacy-preserving SSH forwarding diagnostics. Never log
+        // destination hostnames, IP addresses, payloads or credentials.
+        console.log("FORWARD_REQUEST port=" + targetPort +
+          " type=" + (net.isIP(host) === 4 ? "ipv4" : net.isIP(host) === 6 ? "ipv6" : "domain"));
+        let refusal = "";
+        if (![80, 443].includes(targetPort)) refusal = "port-restricted";
+        else if (!validRemoteName(host)) refusal = "destination-restricted";
+        else if (ownChannels >= 8 || totalChannels >= 24) refusal = "channel-limit";
+        if (refusal) {
+          console.log("FORWARD_REJECT reason=" + refusal);
           reject();
           return;
         }
@@ -179,6 +187,7 @@ function startSSH() {
             ? [{ address: host }]
             : await dns.lookup(host, { family: 4, all: true });
           if (!addresses.length || addresses.some(({ address }) => !publicIPv4(address))) {
+            console.log("FORWARD_REJECT reason=dns-unsafe-or-empty");
             reject();
             finish();
             return;
@@ -191,18 +200,25 @@ function startSSH() {
           remote.once("connect", () => {
             accepted = true;
             const channel = accept();
+            console.log("FORWARD_CONNECTED port=" + targetPort);
             remote.setTimeout(0);
             remote.pipe(channel).pipe(remote);
             channel.on("error", () => remote.destroy());
             channel.on("close", () => remote.destroy());
           });
-          remote.on("error", () => {
+          remote.on("error", (err) => {
+            console.log("FORWARD_ERROR phase=" + (accepted ? "stream" : "connect") +
+              " code=" + (/^[A-Z0-9_]+$/.test(String(err.code)) ? err.code : "OTHER"));
             if (!accepted) { try { reject(); } catch (_) {} }
             remote.destroy();
           });
-          remote.on("timeout", () => remote.destroy());
+          remote.on("timeout", () => {
+            console.log("FORWARD_ERROR phase=connect code=TIMEOUT");
+            remote.destroy();
+          });
           remote.on("close", finish);
         } catch (error) {
+          console.log("FORWARD_REJECT reason=lookup-or-socket-exception");
           try { reject(); } catch (_) {}
           finish();
         }
