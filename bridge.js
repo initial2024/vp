@@ -96,26 +96,55 @@ function startSSH() {
     .update(parsedKey.getPublicSSH()).digest("base64").replace(/=+$/, "");
   console.log("SSH_HOST_FINGERPRINT_SHA256:", fingerprint);
   const failures = new Map();
+  const supportedAuth = ["password", "keyboard-interactive"];
   let totalChannels = 0;
   const server = new Server({ hostKeys: [hostKey], readyTimeout: 20000 }, (client) => {
-    const ip = String(client._sock?.remoteAddress || "unknown");
+    const remoteIP = client._sock?.remoteAddress;
+    const ip = typeof remoteIP === "string" && net.isIP(remoteIP) ? remoteIP : null;
     let authenticated = false;
     let ownChannels = 0;
+    let anonymousFailures = 0;
     client.on("error", () => {});
     client.on("authentication", (ctx) => {
       const now = Date.now();
-      const record = failures.get(ip) || { since: now, count: 0 };
+      const record = ip
+        ? (failures.get(ip) || { since: now, count: 0 })
+        : { since: now, count: anonymousFailures };
       if (now - record.since > 600000) { record.since = now; record.count = 0; }
-      if (record.count >= 5) return ctx.reject();
-      if (ctx.method === "password" && ctx.username === username && sameSecret(ctx.password, password)) {
-        authenticated = true;
-        failures.delete(ip);
-        return ctx.accept();
+      const deny = (reason, countAttempt) => {
+        if (countAttempt) {
+          record.count++;
+          if (ip) {
+            if (failures.size > 1000) failures.clear();
+            failures.set(ip, record);
+          } else anonymousFailures = record.count;
+        }
+        // Authentication telemetry: method and outcome only. Never log
+        // passwords, submitted responses, source IPs, or usernames.
+        console.log("AUTH_REJECT method=" + ctx.method + " reason=" + reason);
+        ctx.reject(supportedAuth);
+      };
+      if (!supportedAuth.includes(ctx.method)) {
+        // Clients typically probe "none" and keys before trying a password.
+        // Unsupported probes must NOT count as incorrect passwords.
+        return deny("unsupported-method", false);
       }
-      record.count++;
-      if (failures.size > 1000) failures.clear();
-      failures.set(ip, record);
-      ctx.reject();
+      if (record.count >= 5) return deny("rate-limited", false);
+      const checkPassword = (candidate) => {
+        if (ctx.username === username && typeof candidate === "string" &&
+            sameSecret(candidate, password)) {
+          authenticated = true;
+          if (ip) failures.delete(ip);
+          console.log("AUTH_ACCEPT method=" + ctx.method);
+          return ctx.accept();
+        }
+        deny("credentials-rejected", true);
+      };
+      if (ctx.method === "password") return checkPassword(ctx.password);
+      // Termius and other SSH clients may use keyboard-interactive instead
+      // of the RFC 4252 password method. Prompt without echoing user input.
+      ctx.prompt([{ prompt: "Password: ", echo: false }], "SSH authentication", "",
+        (responses) => checkPassword(Array.isArray(responses) ? responses[0] : undefined));
     });
     client.on("ready", () => {
       if (!authenticated) { client.end(); return; }
