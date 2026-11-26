@@ -10,10 +10,13 @@ const cwd = process.cwd();
 const settingsFile = path.join(cwd, "bridge.local.json");
 let settings = {};
 try {
-  settings = JSON.parse(fs.readFileSync(settingsFile, "utf8"));
+  let raw = fs.readFileSync(settingsFile, "utf8");
+  raw = raw.replace(/^\uFEFF/, "").trim();
+  settings = JSON.parse(raw);
 } catch (error) {
   if (error.code !== "ENOENT") {
     console.error("LOCAL_CONFIG_INVALID:", error.message);
+    console.error("LOCAL_CONFIG_FIX: replace bridge.local.json with one JSON object only; no markdown fences, comments, or extra text.");
     process.exit(1);
   }
 }
