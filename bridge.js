@@ -117,7 +117,15 @@ function startSSH() {
   const failures = new Map();
   const supportedAuth = ["password", "keyboard-interactive"];
   let totalChannels = 0;
-  const server = new Server({ hostKeys: [hostKey], readyTimeout: 20000 }, (client) => {
+  const server = new Server({
+    hostKeys: [hostKey],
+    readyTimeout: 20000,
+    // The ssh2 server defaults to 15s x 3 unanswered probes and disconnects
+    // idle/backgrounded Android SSH clients after approximately 60 seconds.
+    // Use a longer bounded heartbeat; do not disable idle detection entirely.
+    keepaliveInterval: 60000,
+    keepaliveCountMax: 3
+  }, (client) => {
     const remoteIP = client._sock?.remoteAddress;
     const ip = typeof remoteIP === "string" && net.isIP(remoteIP) ? remoteIP : null;
     let authenticated = false;
