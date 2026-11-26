@@ -248,9 +248,15 @@ function startSSH() {
           remote.once("connect", () => {
             accepted = true;
             const channel = accept();
-            console.log("FORWARD_CONNECTED port=" + targetPort);
+            console.log("FORWARD_CONNECTED port=" + targetPort +
+              " setup_ms=" + (Date.now() - tunnelStartedAt));
             remote.setTimeout(0);
+            // Once the SSH channel is accepted, check whether the client
+            // actually sends TLS/HTTP payload. Record events only, no bytes
+            // or destinations. Never turn this endpoint into an open proxy.
             remote.pipe(channel).pipe(remote);
+            channel.once("data", () => console.log("FORWARD_CLIENT_PAYLOAD_SEEN"));
+            remote.once("data", () => console.log("FORWARD_TARGET_PAYLOAD_SEEN"));
             channel.on("error", () => remote.destroy());
             channel.on("close", () => remote.destroy());
           });
