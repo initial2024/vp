@@ -164,6 +164,7 @@ function startSSH() {
     });
     client.on("ready", () => {
       if (!authenticated) { client.end(); return; }
+      console.log("SSH_CONNECTION_READY");
       client.on("session", (accept) => {
         const session = accept();
         session.on("pty", (a) => a());
