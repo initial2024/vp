@@ -1,0 +1,13 @@
+{
+  "name": "pulsar-private-ssh-bridge",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Opt-in authenticated SSH dynamic-forwarding server for a restricted Node.js container",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "test": "node --test"
+  },
+  "engines": { "node": ">=20" },
+  "dependencies": { "ssh2": "1.17.0" }
+}
