@@ -50,6 +50,25 @@ function sameSecret(a, b) {
   const y = crypto.createHash("sha256").update(String(b)).digest();
   return crypto.timingSafeEqual(x, y);
 }
+// Fixed-category SSH diagnostics: no raw error strings, IPs, domains,
+// usernames, passwords, or request contents are ever recorded.
+function classifySshError(err) {
+  const code = err?.code;
+  if (Number.isInteger(code) && code >= 0 && code <= 255) {
+    return "ssh-disconnect-" + code;
+  }
+  if (typeof code === "string" && /^[A-Z][A-Z0-9_]{1,39}$/.test(code)) {
+    return "system-" + code;
+  }
+  const message = String(err?.message || "").toLowerCase();
+  if (/keepalive.+timeout/.test(message)) return "keepalive-timeout";
+  if (/invalid.+packet|unexpected.+packet|bad.+packet|packet.+error/.test(message)) return "protocol-packet";
+  if (/decrypt|cipher|mac.+fail|signature/.test(message)) return "crypto";
+  if (/unexpected.+disconnect|disconnect/.test(message)) return "disconnect";
+  if (/write after end|stream.+destroyed|socket.+closed|socket.+hang up/.test(message)) return "socket-closed";
+  if (/timeout|timed out/.test(message)) return "timeout";
+  return "unclassified";
+}
 function startHealth() {
   const server = http.createServer((_request, response) => {
     response.writeHead(200, { "content-type": "text/plain; charset=utf-8", "cache-control": "no-store" });
@@ -106,8 +125,9 @@ function startSSH() {
     let anonymousFailures = 0;
     const connectedAt = Date.now();
     client.on("error", (error) => {
-      const kind = /^[A-Z0-9_]+$/.test(String(error?.code)) ? error.code : "OTHER";
-      console.log("SSH_CONNECTION_ERROR code=" + kind);
+      console.log("SSH_CONNECTION_ERROR kind=" + classifySshError(error) +
+        " after_ready=" + authenticated +
+        " elapsed_ms=" + (Date.now() - connectedAt));
     });
     client.on("close", () => {
       console.log("SSH_CONNECTION_CLOSED alive_ms=" + (Date.now() - connectedAt));
@@ -166,9 +186,11 @@ function startSSH() {
       if (!authenticated) { client.end(); return; }
       console.log("SSH_CONNECTION_READY");
       client.on("session", (accept) => {
+        console.log("SSH_SESSION_REQUEST");
         const session = accept();
-        session.on("pty", (a) => a());
+        session.on("pty", (a) => { console.log("SSH_PTY_REQUEST"); a(); });
         session.on("shell", (a) => {
+          console.log("SSH_SHELL_REQUEST");
           const stream = a();
           stream.write("Private SSH forwarding endpoint. No system shell is provided.\r\n");
           stream.on("data", (data) => {
@@ -254,4 +276,4 @@ function start() {
   if (mode === "ssh") startSSH(); else startHealth();
 }
 if (require.main === module) start();
-module.exports = { publicIPv4, validRemoteName, sameSecret, start };
+module.exports = { publicIPv4, validRemoteName, sameSecret, classifySshError, start };
