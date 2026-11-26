@@ -60,6 +60,28 @@ test("SSH server accepts authenticated client and rejects private destination", 
     });
     assert.ok(result.error, "Forward to private IP must be rejected");
     assert.match(logs, /SSH_HOST_FINGERPRINT_SHA256:/);
+    assert.match(logs, /AUTH_ACCEPT method=password/);
+
+    // Exercise a client preferring keyboard-interactive, with an initial
+    // none probe. This must NOT trigger the password failure counter.
+    await new Promise((resolve, reject) => {
+      const client = new Client();
+      client.once("error", reject);
+      client.on("keyboard-interactive", (_name, _instructions, _lang, prompts, finish) => {
+        assert.equal(prompts.length, 1);
+        assert.equal(prompts[0].echo, false);
+        finish([password]);
+      });
+      client.once("ready", () => { client.end(); resolve(); });
+      client.connect({
+        host: "127.0.0.1", port, username: "bridge",
+        authHandler: ["none", "keyboard-interactive"],
+        tryKeyboard: true, readyTimeout: 10000,
+        hostVerifier: () => true // CI-only, never use for end-user SSH
+      });
+    });
+    assert.match(logs, /AUTH_REJECT method=none reason=unsupported-method/);
+    assert.match(logs, /AUTH_ACCEPT method=keyboard-interactive/);
   } finally {
     child.kill("SIGTERM");
     fs.rmSync(dir, { recursive: true, force: true });
