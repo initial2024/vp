@@ -185,7 +185,8 @@ function startSSH() {
     console.log("FORWARD_PORTS: TCP 80,443 only; no UDP; no system shell");
   });
 }
-if (require.main === module) {
+function start() {
   if (mode === "ssh") startSSH(); else startHealth();
 }
-module.exports = { publicIPv4, validRemoteName, sameSecret };
+if (require.main === module) start();
+module.exports = { publicIPv4, validRemoteName, sameSecret, start };
