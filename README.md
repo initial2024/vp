@@ -12,6 +12,21 @@ This project experiments with an authenticated **SSH protocol server implemented
 
 ## Setup — mobile only
 
+For easier phone-only installation, paste the following small loader into your existing `/home/container/index.js`. It downloads the reviewed GitHub bootstrap into `vp-bootstrap.js`, which in turn fetches the application files on each start. It does **not** automatically enable SSH/proxy mode.
+
+```js
+(async () => {
+  const url = "https://raw.githubusercontent.com/initial2024/vp/4b7af715c167a2274f56560cdd32d3d6cb502bb4/index.js";
+  const response = await fetch(url, { redirect: "error", signal: AbortSignal.timeout(20000) });
+  if (!response.ok) throw Error("GitHub bootstrap failed: " + response.status);
+  require("node:fs").writeFileSync("vp-bootstrap.js", await response.text());
+  require("./vp-bootstrap.js");
+})().catch(error => { console.error("DEPLOY_FAILED:", error.message); process.exitCode = 1; });
+```
+
+You can instead paste the full [index.js](https://raw.githubusercontent.com/initial2024/vp/main/index.js) directly. Do not put secrets in the loader.
+
+
 1. In [PulsarCloud](https://sole.pulsarcloud.xyz/) open your server **Files**, backing up the existing `index.js`.
 2. Replace **only** `/home/container/index.js` with [this repo's index.js](https://raw.githubusercontent.com/initial2024/vp/main/index.js). Set the Startup **MAIN_FILE** to `index.js`.
 3. Click Start. The first start downloads `bridge.js` and `package.json` from this public repository and runs `npm install` if necessary. Later starts pull those files again. Local private settings are never fetched or overwritten. You should see `GITHUB_DEPLOY_OK`, `MODE: health`, and `LISTEN_OK: 2461` (or your allocated port).
